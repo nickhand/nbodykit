@@ -88,14 +88,11 @@ class FFTPowerWithRandomsAlgorithm(Algorithm):
         
         # reuse the memory in c1.real for the 3d power spectrum
         p3d = pm.complex
+        norm = pm.BoxSize.prod()**3 / meta['N_data'] / pm.Nmesh**3
     
         # calculate the 3d power spectrum, islab by islab to save memory
         for islab in range(len(pm.complex)):
-            p3d[islab, ...] = pm.complex[islab]*pm.complex[islab].conj()
-
-        # the complex field is dimensionless; power is L^3
-        # ref to http://icc.dur.ac.uk/~tt/Lectures/UA/L4/cosmology.pdf
-        p3d[...] *= pm.BoxSize.prod()
+            p3d[islab, ...] = pm.complex[islab]*pm.complex[islab].conj() * norm
 
         # the 3D k
         k3d = pm.k

@@ -232,9 +232,6 @@ class FKPCatalog(object):
             Nlocal = self.painter.basepaint(pm, position, -alpha*weight)
             N_ran += Nlocal
 
-        # store a copy for normalizing
-        norm = -1. * pm.real.sum() / pm.Nmesh**3
-
         N_ran = self.comm.allreduce(N_ran)        
         if N_ran != self.randoms.size:
             args = (N_ran, self.randoms.size)
@@ -244,10 +241,7 @@ class FKPCatalog(object):
         for [position, weight] in self.read('data', columns):
             Nlocal = self.painter.basepaint(pm, position, weight)
             N_data += Nlocal 
-            
-        # normalize by the randoms
-        pm.real /= norm
-            
+                        
         N_data = self.comm.allreduce(N_data)
         if N_data != self.data.size:
             args = (N_data, self.data.size)
