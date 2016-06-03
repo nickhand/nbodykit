@@ -88,7 +88,9 @@ class FFTPowerWithRandomsAlgorithm(Algorithm):
         
         # reuse the memory in c1.real for the 3d power spectrum
         p3d = pm.complex
-        norm = pm.BoxSize.prod()**3 / meta['N_data'] / pm.Nmesh**3
+        
+        # this is V^2 / A where A = N^2 / V when nbar is constant
+        norm = pm.BoxSize.prod()**3 / meta['N_data']**2
     
         # calculate the 3d power spectrum, islab by islab to save memory
         for islab in range(len(pm.complex)):
