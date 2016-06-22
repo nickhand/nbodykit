@@ -2,7 +2,7 @@
 
 # can supply 0 or 1 argument
 if [ "$#" -gt 1 ]; then
-    echo "usage: activate.sh [latest|stable]"
+    echo "usage: activate.sh latest|stable"
     exit 1
 fi
 
@@ -26,6 +26,7 @@ else
 fi
 
 NBKITROOT=`dirname ${_SCRIPT_LOCATION}`
+NBKITROOT=`readlink -f $NBKITROOT`
 
 # load default python
 module load python/2.7-anaconda
