@@ -109,7 +109,7 @@ class FFTPowerWithRandomsAlgorithm(Algorithm):
         edges = [kedges, muedges]
         
         # result is (k, mu, power, modes)
-        result, _ = measurestats.project_to_basis(pm.comm, k3d, p3d, edges, symmetric=True)
+        result, _ = measurestats.project_to_basis(pm.comm, k3d, p3d, edges, los=self.los, symmetric=True)
 
         # compute the metadata to return
         Lx, Ly, Lz = pm.BoxSize
