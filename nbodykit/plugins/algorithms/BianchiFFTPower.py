@@ -1,7 +1,6 @@
 from nbodykit.extensionpoints import Algorithm, DataSource
 from nbodykit.fkp import FKPCatalog
 import numpy
-import logging
 
 class BianchiPowerAlgorithm(Algorithm):
     """
@@ -59,7 +58,6 @@ class BianchiPowerAlgorithm(Algorithm):
     the plaintext file.
     """
     plugin_name = "BianchiFFTPower"
-    logger = logging.getLogger(plugin_name)
 
     def __init__(self, data, randoms, Nmesh, max_ell, 
                     paintbrush='cic',
@@ -160,7 +158,7 @@ class BianchiPowerAlgorithm(Algorithm):
         for p in poles:
             
             # result is (k, mu, power, modes)
-            result, _ = measurestats.project_to_basis(pm.comm, k3d, p, edges, symmetric=True)
+            result, _ = measurestats.project_to_basis(pm.comm, k3d, p, edges, hermitian_symmetric=True)
             poles_final.append(numpy.squeeze(result[2]))
             
         # return (k, poles, modes)

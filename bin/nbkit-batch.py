@@ -10,12 +10,37 @@ from nbodykit.extensionpoints import Algorithm, algorithms
 from nbodykit.utils.taskmanager import TaskManager
 
 # setup the logging
-rank = MPI.COMM_WORLD.rank
-name = MPI.Get_processor_name()
-logging.basicConfig(level=logging.DEBUG,
-                    format='rank %d on %s: '%(rank,name) + \
-                            '%(asctime)s %(name)-15s %(levelname)-8s %(message)s',
-                    datefmt='%m-%d %H:%M')
+
+def setup_logging(log_level):
+    """
+    Set the basic configuration of all loggers
+    """
+
+    # This gives:
+    #
+    # [ 000000.43 ]   0:waterfall 06-28 14:49  measurestats    INFO     Nproc = [2, 1, 1]
+    # [ 000000.43 ]   0:waterfall 06-28 14:49  measurestats    INFO     Rmax = 120
+
+    import time
+    logger = logging.getLogger();
+    t0 = time.time()
+
+    rank = MPI.COMM_WORLD.rank
+    name = MPI.Get_processor_name().split('.')[0]
+
+    class Formatter(logging.Formatter):
+        def format(self, record):
+            s1 = ('[ %09.2f ] % 3d:%s ' % (time.time() - t0, rank, name))
+            return s1 + logging.Formatter.format(self, record)
+
+    fmt = Formatter(fmt='%(asctime)s %(name)-15s %(levelname)-8s %(message)s',
+                    datefmt='%m-%d %H:%M ')
+
+    hdlr = logging.StreamHandler()
+    hdlr.setFormatter(fmt)
+    logger.addHandler(hdlr)
+    logger.setLevel(log_level)
+
 logger = logging.getLogger('nbkit-batch')
 
 def replacements_from_file(value):
@@ -69,6 +94,35 @@ def tasks_parser(value):
 
     return [key, parsed]
 
+def SafeStringParse(formatter, s, keys):
+    """
+    A "safe" version :func:`string.Formatter.parse` that will 
+    only parse the input keys specified in ``keys``
+    
+    Parameters
+    ----------
+    formatter : string.Formatter
+        the string formatter class instance
+    s : str
+        the string we are formatting
+    keys : list of str
+        list of the keys to accept as valid
+    """
+    # the default list of keys
+    l = list(Formatter.parse(formatter, s))
+    
+    toret = []
+    for x in l:
+        if x[1] in keys:
+            toret.append(x)
+        else:
+            val = x[0]
+            if x[1] is not None:
+                fmt = "" if not x[2] else ":%s" %x[2]
+                val += "{%s%s}" %(x[1], fmt)
+            toret.append((val, None, None, None))
+    return iter(toret)
+
 class BatchAlgorithmDriver(object):
     """
     Class to facilitate running algorithms in batch mode
@@ -116,8 +170,8 @@ class BatchAlgorithmDriver(object):
             exactly `cpus_per_worker` ranks, instead including the remainder 
             as well; default is `False`
         """
-        logger.setLevel(log_level)
-        
+        setup_logging(log_level)
+
         self.algorithm_name  = algorithm_name
         self.algorithm_class = getattr(algorithms, algorithm_name) 
         self.template        = os.path.expandvars(open(config, 'r').read())
@@ -277,10 +331,6 @@ class BatchAlgorithmDriver(object):
         # if you are the pool's root, write out the temporary parameter file
         this_config = None
         if self.workers.subcomm.rank == 0:
-            
-            # extract the keywords that we need to format from template file
-            formatter = Formatter()
-            kwargs = [kw for _, kw, _, _ in formatter.parse(self.template) if kw]
                 
             # initialize a temporary file
             with tempfile.NamedTemporaryFile(delete=False) as ff:
@@ -299,9 +349,15 @@ class BatchAlgorithmDriver(object):
                     for k in self.extras:
                         possible_kwargs[k] = self.extras[k][itask]
                         
+                # use custom formatter that only formats the possible keys, ignoring other
+                # occurences of curly brackets
+                formatter = Formatter()
+                formatter.parse = lambda l: SafeStringParse(formatter, l, list(possible_kwargs))
+                kwargs = [kw for _, kw, _, _ in formatter.parse(self.template) if kw]
+                        
                 # do the string formatting if the key is present in template
                 valid = {k:possible_kwargs[k] for k in possible_kwargs if k in kwargs}
-                ff.write(self.template.format(**valid).encode())
+                ff.write(formatter.format(self.template, **valid).encode())
         
         # bcast the file name to all in the worker pool
         this_config = self.workers.subcomm.bcast(this_config, root=0)

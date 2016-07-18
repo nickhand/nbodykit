@@ -1,11 +1,6 @@
 from nbodykit.extensionpoints import Algorithm, DataSource
-from nbodykit import fof
-import logging
+from nbodykit import fof, utils
 import numpy
-import mpsort
-from mpi4py import MPI
-
-logger = logging.getLogger('FiberCollisions')
 
 def RaDecDataSource(d):
     source = DataSource.registry.RaDecRedshift
@@ -31,15 +26,18 @@ class FiberCollisionsAlgorithm(Algorithm):
     """
     plugin_name = "FiberCollisions"
     
-    def __init__(self, datasource, collision_radius=62/60./60., seed=0):
+    def __init__(self, datasource, collision_radius=62/60./60., seed=None):
         
         # store collision radius in radians
         self._collision_radius_rad = self.collision_radius * numpy.pi/180.
         if self.comm.rank == 0: 
-            logger.info("collision radius in degrees = %.4f" %collision_radius)
+            self.logger.info("collision radius in degrees = %.4f" %collision_radius)
             
-        # set the seed explicitly for reproducibility
-        self.random = numpy.random.RandomState(self.seed)
+        # create the random state from the global seed and comm size
+        if self.seed is not None:
+            self.random_state = utils.local_random_state(self.seed, self.comm)
+        else:
+            self.random_state = numpy.random
         
     @classmethod
     def register(cls):
@@ -95,9 +93,9 @@ class FiberCollisionsAlgorithm(Algorithm):
         # print out some info
         if self.comm.rank == 0:
 
-            logger.info("population 1 (clean) size = %d" %N_pop1)
-            logger.info("population 2 (collided) size = %d" %N_pop2)
-            logger.info("collision fraction = %.4f" %f)
+            self.logger.info("population 1 (clean) size = %d" %N_pop1)
+            self.logger.info("population 2 (collided) size = %d" %N_pop2)
+            self.logger.info("collision fraction = %.4f" %f)
 
         # return a structured array
         d = list(zip(['Label', 'Collided', 'NeighborID'], [labels, collided, neighbors]))
@@ -112,6 +110,9 @@ class FiberCollisionsAlgorithm(Algorithm):
         across ranks and assign fibers, such that the minimum
         number of objects are collided out of the survey
         """
+        import mpsort
+        from mpi4py import MPI
+        
         comm = self.comm
         mask = Label != 0
         PIG = numpy.empty(mask.sum(), dtype=[
@@ -150,8 +151,8 @@ class FiberCollisionsAlgorithm(Algorithm):
         PIG2.sort(order=['Label'])
         
         if self.comm.rank == 0:
-            logger.info('total number of collision groups = %d', Nhalo-1)
-            logger.info("Started fiber assignment")
+            self.logger.info('total number of collision groups = %d', Nhalo-1)
+            self.logger.info("Started fiber assignment")
 
         # loop over unique group ids
         for group_id in numpy.unique(PIG2['Label']):
@@ -162,7 +163,7 @@ class FiberCollisionsAlgorithm(Algorithm):
             
             # pairs (random selection)
             if N == 2:
-                which = self.random.choice([0,1])
+                which = self.random_state.choice([0,1])
                 indices = [start+which, start+(which^1)]
                 PIG2['Collided'][indices] = [1, 0]
                 PIG2['NeighborID'][indices] = [PIG2['Index'][start+(which^1)], -1]
@@ -173,7 +174,7 @@ class FiberCollisionsAlgorithm(Algorithm):
                 PIG2['NeighborID'][start:end] = -1
                 PIG2['NeighborID'][start:end][collided==1] = PIG2['Index'][start+nearest][:]
 
-        if self.comm.rank == 0: logger.info("Finished fiber assignment")
+        if self.comm.rank == 0: self.logger.info("Finished fiber assignment")
     
         # return to the order specified by the global unique index
         mpsort.sort(PIG2, orderby='Index', out=PIG)
@@ -218,7 +219,7 @@ class FiberCollisionsAlgorithm(Algorithm):
             # remove object that has most # of collisions 
             # and those colliding objects have least # of collisions
             idx = numpy.where(n_collisions == n_collisions.max())[0]
-            ii = self.random.choice(numpy.where(n_other[idx] == n_other[idx].min())[0])
+            ii = self.random_state.choice(numpy.where(n_other[idx] == n_other[idx].min())[0])
             collided_index = idx[ii]  
     
             # make the collided galaxy and remove from group
@@ -260,7 +261,7 @@ class FiberCollisionsAlgorithm(Algorithm):
             _, ext = os.path.splitext(output)
             if 'hdf' not in ext: output += '.hdf5'
             
-            logger.info("saving (Label, Collided, NeighborID) as Pandas HDF with name %s" %output)
+            self.logger.info("saving (Label, Collided, NeighborID) as Pandas HDF with name %s" %output)
         
             result = numpy.concatenate(result, axis=0)
             df = pd.DataFrame.from_records(result)

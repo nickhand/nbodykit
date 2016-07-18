@@ -1,9 +1,8 @@
 from nbodykit.extensionpoints import Algorithm
 from nbodykit.extensionpoints import DataSource, Transfer, Painter
-
 import os
 import numpy
-import logging
+
 
 def FieldType(ns):
     """
@@ -89,7 +88,6 @@ class FFTPowerAlgorithm(Algorithm):
     the plaintext file.
     """
     plugin_name = "FFTPower"
-    logger = logging.getLogger(plugin_name)
     
     def __init__(self, mode, Nmesh, field, other=None, los='z', Nmu=5, 
                     dk=None, kmin=0., quiet=False, poles=[], paintbrush='cic'):
@@ -182,8 +180,8 @@ class FFTPowerAlgorithm(Algorithm):
         edges = [kedges, muedges]
         result, pole_result = measurestats.project_to_basis(pm.comm, x3d, y3d, edges, 
                                                             poles=self.poles, 
-                                                            los=self.los, 
-                                                            symmetric=True)
+                                                            los=self.los,
+                                                            hermitian_symmetric=True)
                                                             
         # compute the metadata to return
         Lx, Ly, Lz = pm.BoxSize
@@ -282,7 +280,6 @@ class FFTCorrelationAlgorithm(Algorithm):
     the plaintext file.
     """
     plugin_name = "FFTCorrelation"
-    logger = logging.getLogger(plugin_name)
     
     def __init__(self, mode, Nmesh, field, other=None, los='z', Nmu=5, 
                     dk=None, kmin=0., quiet=False, poles=[], paintbrush='cic'):
@@ -333,7 +330,7 @@ class FFTCorrelationAlgorithm(Algorithm):
         result, pole_result = measurestats.project_to_basis(pm.comm, x3d, y3d, edges,
                                                             poles=self.poles,
                                                             los=self.los,
-                                                            symmetric=False)
+                                                            hermitian_symmetric=False)
 
         # compute the metadata to return
         Lx, Ly, Lz = pm.BoxSize

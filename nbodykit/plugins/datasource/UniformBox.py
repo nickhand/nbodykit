@@ -1,8 +1,6 @@
 from nbodykit.extensionpoints import DataSource
+from nbodykit import utils
 import numpy
-import logging
-
-logger = logging.getLogger('UniformBox')
          
 class UniformBoxDataSource(DataSource):
     """
@@ -17,12 +15,11 @@ class UniformBoxDataSource(DataSource):
     
     def __init__(self, N, BoxSize, max_speed=500., mu_logM=13.5, sigma_logM=0.5, seed=None):        
         
-        # initalize a random state for each rank
+        # create the random state from the global seed and comm size
         if self.seed is not None:
-            seed = self.seed*(self.comm.rank+1)
-            self.random = numpy.random.RandomState(seed)
+            self.random_state = utils.local_random_state(self.seed, self.comm)
         else:
-            self.random = numpy.random
+            self.random_state = numpy.random
             
     @classmethod
     def register(cls):
@@ -54,9 +51,9 @@ class UniformBoxDataSource(DataSource):
         toret = {}
         shape = (self.N, 3)
         
-        toret['Position'] = self.random.uniform(size=shape) * self.BoxSize
-        toret['Velocity'] = 2*self.max_speed * self.random.uniform(size=shape) - self.max_speed
-        toret['LogMass']  = self.random.normal(loc=self.mu_logM, scale=self.sigma_logM, size=self.N)
+        toret['Position'] = self.random_state.uniform(size=shape) * self.BoxSize
+        toret['Velocity'] = 2*self.max_speed * self.random_state.uniform(size=shape) - self.max_speed
+        toret['LogMass']  = self.random_state.normal(loc=self.mu_logM, scale=self.sigma_logM, size=self.N)
         toret['Mass']     = 10**(toret['LogMass'])
         
         return toret

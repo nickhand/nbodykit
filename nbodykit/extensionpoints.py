@@ -18,11 +18,13 @@ To define a plugin:
 """
 from nbodykit.utils.config import autoassign, ConstructorSchema, ReadConfigFile, PluginParsingError
 from nbodykit.distributedarray import ScatterArray
+from nbodykit.extern import six
 
 import numpy
 from argparse import Namespace
 import functools
 import weakref
+import logging
 
 # MPI will be required because
 # a plugin instance will be created for a MPI communicator.
@@ -83,7 +85,7 @@ def ExtensionPoint(registry):
         # note that we are not keeping a reference to
         # the extensionpoint class here to avoid
         # a circular reference.
-        cls = add_metaclass(PluginMount)(cls)
+        cls = six.add_metaclass(PluginMount)(cls)
         cls.registry = registry
 
         # now add the extension point for book keeping
@@ -97,7 +99,7 @@ class PluginMount(type):
     """ 
     Metaclass for an extension point that provides the 
     methods to manage plugins attached to the extension point
-    """
+    """ 
     def __init__(cls, name, bases, attrs):
 
         # we need to avoid plugin initialization on
@@ -130,6 +132,9 @@ class PluginMount(type):
             # add a schema
             init.schema = ConstructorSchema()
             cls.schema = cls.__init__.schema
+            
+            # add a logger
+            cls.logger = logging.getLogger(cls.plugin_name)
 
             # track names of classes
             setattr(cls.registry, cls.plugin_name, cls)
@@ -140,7 +145,7 @@ class PluginMount(type):
             # configure the class __init__, attaching the comm, and optionally cosmo
             attach_cosmo = issubclass(cls, DataSourceBase)
             cls.__init__ = autoassign(init, attach_cosmo=attach_cosmo)
-
+        
     def create(cls, plugin_name, use_schema=False, **kwargs):
         """
         Instantiate a plugin from this extension point,
@@ -266,26 +271,6 @@ class PluginMount(type):
             return "No available Plugins registered at %s" %cls.__name__
         else:
             return '\n'.join(s) + '\n'
-
-# copied from six
-def add_metaclass(metaclass):
-    """
-    Class decorator for creating a class with a metaclass
-    in such a way that is compatible with both python 
-    2 and 3
-    """
-    def wrapper(cls):
-        orig_vars = cls.__dict__.copy()
-        slots = orig_vars.get('__slots__')
-        if slots is not None:
-            if isinstance(slots, str):
-                slots = [slots]
-            for slots_var in slots:
-                orig_vars.pop(slots_var)
-        orig_vars.pop('__dict__', None)
-        orig_vars.pop('__weakref__', None)
-        return metaclass(cls.__name__, cls.__bases__, orig_vars)
-    return wrapper
 
 @ExtensionPoint(transfers)
 class Transfer:

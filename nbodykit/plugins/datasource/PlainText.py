@@ -1,9 +1,6 @@
 from nbodykit.extensionpoints import DataSource
 from nbodykit.utils import selectionlanguage
 import numpy
-import logging
-
-logger = logging.getLogger('PlainText')
 
 class PlainTextDataSource(DataSource):
     """
@@ -58,6 +55,7 @@ class PlainTextDataSource(DataSource):
         
         This provides ``Position`` and optionally ``Velocity`` columns
         """
+        from nbodykit.ndarray import extend_dtype
         
         # read in the plain text file as a recarray
         kwargs = {}
@@ -67,27 +65,35 @@ class PlainTextDataSource(DataSource):
         data = numpy.recfromtxt(self.path, **kwargs)
         nobj = len(data)
         
-        # select based on input conditions
-        if self.select is not None:
-            mask = self.select.get_mask(data)
-            data = data[mask]
-        logger.info("total number of objects selected is %d / %d" % (len(data), nobj))
-        
-        toret = {}
-        
+        # copy the data
+        new_dtypes = [('Position', ('f4', len(self.poscols)))]
+        if self.velcols is not None or self.rsd is not None:
+            new_dtypes += [('Velocity', ('f4', len(self.velcols)))]
+        data = extend_dtype(data, new_dtypes)
+           
         # get position and velocity, if we have it
         pos = numpy.vstack(data[k] for k in self.poscols).T.astype('f4')
         pos *= self.posf
-        if self.velcols is not None:
+        if self.velcols is not None or self.rsd is not None:
             vel = numpy.vstack(data[k] for k in self.velcols).T.astype('f4')
             vel *= self.velf
-            toret['Velocity'] = Velocity
+            data['Velocity'] = Velocity
 
+        # do RSD
         if self.rsd is not None:
             dir = "xyz".index(self.rsd)
             pos[:, dir] += vel[:, dir]
             pos[:, dir] %= self.BoxSize[dir]
-        toret['Position'] = pos
+        data['Position'] = pos
+        
+        # select based on input conditions
+        if self.select is not None:
+            mask = self.select.get_mask(data)
+            data = data[mask]
+        self.logger.info("total number of objects selected is %d / %d" % (len(data), nobj))
+        
+        toret = {}
+        for name in data.dtype.names:
+            toret[name] = data[name].copy()
         
         return toret
-
