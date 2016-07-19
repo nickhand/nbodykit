@@ -231,7 +231,7 @@ class FKPCatalog(object):
         
         # nbar
         volume = pm.BoxSize.prod()
-        nbar = 1.*self.data.size / volume
+        nbar = 1.*self.randoms.size / volume
         
         # paint -1.0*alpha*N_randoms
         for [position, weight] in self.read('randoms', columns):
@@ -247,6 +247,8 @@ class FKPCatalog(object):
         if N_ran != self.randoms.size:
             args = (N_ran, self.randoms.size)
             raise ValueError("`size` mismatch when painting: `N_ran` = %d, `randoms.size` = %d" %args)
+
+        nbar = 1.*self.data.size / volume
 
         # paint the data
         for [position, weight] in self.read('data', columns):
