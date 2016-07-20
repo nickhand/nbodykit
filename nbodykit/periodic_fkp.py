@@ -220,7 +220,6 @@ class FKPCatalog(object):
         columns = ['Position', 'Weight']
         stats = {}
         N_ran = N_data = 0
-        A_ran = A_data = 0.
         S_ran = S_data = 0.
         W_ran = W_data = 0.
         
@@ -251,10 +250,9 @@ class FKPCatalog(object):
         for [position, weight] in self.read('randoms', columns):
             Nlocal = self.painter.basepaint(pm, position, -alpha*weight)
             N_ran += Nlocal
-            A_ran += (nbar*weight).sum()
             S_ran += (weight**2).sum()
 
-        A_ran = self.comm.allreduce(A_ran)
+        A_ran = nbar * W_ran
         N_ran = self.comm.allreduce(N_ran)
         S_ran = self.comm.allreduce(S_ran)
           
@@ -267,10 +265,9 @@ class FKPCatalog(object):
         for [position, weight] in self.read('data', columns):
             Nlocal = self.painter.basepaint(pm, position, weight)
             N_data += Nlocal 
-            A_data += (nbar*weight).sum()
             S_data += (weight**2).sum()
                         
-        A_data = self.comm.allreduce(A_data)
+        A_data = nbar * W_data
         N_data = self.comm.allreduce(N_data)
         S_data = self.comm.allreduce(S_data)
         
@@ -280,6 +277,7 @@ class FKPCatalog(object):
 
         # store the stats (see equations 13-15 of Beutler et al 2013)
         # see equations 13-15 of Beutler et al 2013
+        stats['W_data'] = W_data; stats['W_ran'] = W_ran
         stats['N_data'] = N_data; stats['N_ran'] = N_ran
         stats['A_data'] = A_data; stats['A_ran'] = A_ran
         stats['S_data'] = S_data; stats['S_ran'] = S_ran
