@@ -222,22 +222,36 @@ class FKPCatalog(object):
         N_ran = N_data = 0
         A_ran = A_data = 0.
         S_ran = S_data = 0.
+        W_ran = W_data = 0.
         
         # clear the density mesh
         pm.clear()
         
-        # alpha determined from size of data sources
-        alpha = 1.*self.data.size/self.randoms.size
-        
-        # nbar
+        # determine alpha from the sum of the weights
+        # weights below are "completeness weights"
+        #----------------------------------------------
+        for [weight] in self.read('randoms', ['Weight']):
+            W_ran += weight.sum()
+        for [weight] in self.read('data', ['Weight']):
+            W_data += weight.sum()
+            
+        W_ran = self.comm.allreduce(W_ran)
+        W_data = self.comm.allreduce(W_data)
+         
+        # alpha is the ratio of the sum of the weights
+        # when weights are unity, this is the normal definiton
+        alpha = 1.*W_data/W_ran   
+   
+        # (weighted) nbar of galaxies
         volume = pm.BoxSize.prod()
-        nbar = 1.*self.randoms.size / volume
+        nbar   = W_data / volume
         
         # paint -1.0*alpha*N_randoms
+        #------------------------------------------------------
         for [position, weight] in self.read('randoms', columns):
             Nlocal = self.painter.basepaint(pm, position, -alpha*weight)
             N_ran += Nlocal
-            A_ran += (nbar*weight**2).sum()
+            A_ran += (nbar*weight).sum()
             S_ran += (weight**2).sum()
 
         A_ran = self.comm.allreduce(A_ran)
@@ -248,13 +262,12 @@ class FKPCatalog(object):
             args = (N_ran, self.randoms.size)
             raise ValueError("`size` mismatch when painting: `N_ran` = %d, `randoms.size` = %d" %args)
 
-        nbar = 1.*self.data.size / volume
-
         # paint the data
+        #--------------------------------------------------------
         for [position, weight] in self.read('data', columns):
             Nlocal = self.painter.basepaint(pm, position, weight)
             N_data += Nlocal 
-            A_data += (nbar*weight**2).sum()
+            A_data += (nbar*weight).sum()
             S_data += (weight**2).sum()
                         
         A_data = self.comm.allreduce(A_data)
@@ -274,7 +287,7 @@ class FKPCatalog(object):
         
         stats['A_ran'] *= alpha
         stats['S_ran'] *= alpha**2
-        stats['shot_noise'] = (S_ran + S_data)/A_ran # the final shot noise estimate for monopole
+        stats['shot_noise'] = S_ran/A_ran + S_data/A_data # the final shot noise estimate for monopole
         
         return stats
     
