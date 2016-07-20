@@ -285,7 +285,9 @@ class FKPCatalog(object):
         
         stats['A_ran'] *= alpha
         stats['S_ran'] *= alpha**2
-        stats['shot_noise'] = S_ran/A_ran + S_data/A_data # the final shot noise estimate for monopole
+        
+        # the final shot noise estimate for monopole
+        stats['shot_noise'] = stats['S_ran']/stats['A_ran'] + stats['S_data']/stats['A_data'] 
         
         return stats
     
