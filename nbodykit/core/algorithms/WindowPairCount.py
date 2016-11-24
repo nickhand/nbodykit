@@ -19,23 +19,9 @@ def paircount(datasources, redges, Nmu=0, comm=None, subsample=1, los='z', poles
     poles = numpy.array(poles)
     Rmax  = redges[-1]
     if comm is None: comm = MPI.COMM_WORLD
-    
-    # determine processor division for domain decomposition
-    for Nx in range(int(comm.size**0.3333) + 1, 0, -1):
-        if comm.size % Nx == 0: break
-    else:
-        Nx = 1
-    for Ny in range(int(comm.size**0.5) + 1, 0, -1):
-        if (comm.size // Nx) % Ny == 0: break
-    else:
-        Ny = 1
-    Nz = comm.size // Nx // Ny
-    Nproc = [Nx, Ny, Nz]
-    
+        
     # log some info
-    if comm.rank == 0:
-        logger.info('Nproc = %s' %str(Nproc))
-        logger.info('Rmax = %g' %Rmax)
+    if comm.rank == 0: logger.info('Rmax = %g' %Rmax)
     
     # need to compute cartesian min/max
     pos_min = numpy.array([numpy.inf]*3)
@@ -66,7 +52,14 @@ def paircount(datasources, redges, Nmu=0, comm=None, subsample=1, los='z', poles
         BoxSize = None
         
     BoxSize = comm.bcast(BoxSize)
-        
+    if comm.rank == 0: logger.info("BoxSize = %s" %str(BoxSize))
+    
+    # determine processor division for domain decomposition
+    Nproc = [1, 1, 1]
+    idx = numpy.argmax(BoxSize)
+    Nproc[idx] = comm.size
+    if comm.rank == 0: logger.info('Nproc = %s' %str(Nproc))
+    
     pos1 = pos1[comm.rank * subsample // comm.size ::subsample]
     N1 = comm.allreduce(len(pos1))
     
