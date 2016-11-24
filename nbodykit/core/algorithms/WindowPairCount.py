@@ -124,6 +124,8 @@ def paircount(datasources, redges, Nmu=0, comm=None, subsample=1, los='z', poles
     # do the pair counting
     # have to set usefast = False to get mean centers, or exception thrown
     pc = correlate.paircount(tree2, tree1, bins, np=0, usefast=False, compute_mean_coords=True)
+    logger.info('...rank %d done correlating' %(comm.rank))
+    
     pc.sum1[:] = comm.allreduce(pc.sum1)
     
     # get the mean bin values, reducing from all ranks
