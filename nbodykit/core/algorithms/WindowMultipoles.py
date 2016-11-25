@@ -53,7 +53,7 @@ def paircount(datasource, poles, redges, comm=None, subsample=1):
     if comm.rank == 0: logger.info("BoxSize = %s" %str(BoxSize))
     
     # determine processor division for domain decomposition
-    if Rmax > BoxSize.min() * 0.25
+    if Rmax > BoxSize.min() * 0.25:
         Nproc = [1, 1, 1]
         idx = numpy.argmax(BoxSize)
         Nproc[idx] = comm.size
@@ -93,7 +93,6 @@ def paircount(datasource, poles, redges, comm=None, subsample=1):
     else:
         layout = domain.decompose(pos2, smoothing=Rmax)
         pos2 = layout.exchange(pos2)
-    N2 = comm.allreduce(len(pos2))
     if comm.rank == 0: logger.info('exchange pos2')
 
     # initialize the trees to hold the field points
@@ -195,22 +194,36 @@ class WindowMultipolesAlgorithm(Algorithm):
         """
         # do the work
         kw = {'comm':self.comm, 'subsample':self.subsample}
-        return paircount(self.field, self.poles, self.rbins, **kw)
+        pc, RR = paircount(self.field, self.poles, self.rbins, **kw)
 
-        
+        cols = ['r'] + ['RR_%d' %l for l in self.poles] + ['N']
+        result = [pc.mean_centers] + [RR[:,i] for i in range(len(self.poles))] + [pc.pair_counts]
+        return pc.edges, dict(zip(cols, result))
+    
     def save(self, output, result):
         """
         Save the result returned by `run()` to the filename specified by `output`
-        
+    
         Parameters
         ----------
         output : str
             the string specifying the file to save
         result : tuple
-            the structured array results returned by :func:`Corrfunc.mocks.DDrppi_mocks`
+            the tuple returned by `run()` -- first argument specifies the bin
+            edges and the second is a dictionary holding the data results
         """
-        if self.comm.rank == 0:    
-            numpy.savez(output, result)
+        from nbodykit.storage import MeasurementStorage
+    
+        # only master writes
+        if self.comm.rank == 0:
+        
+            logger.info("saving %s..." %output)
+            edges, result = result
+            storage = MeasurementStorage.create('1d', output)
+    
+            cols = list(result.keys())
+            values = list(result.values())
+            storage.write(edges, cols, values)
 
 
             
