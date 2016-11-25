@@ -102,7 +102,7 @@ def paircount(datasource, poles, redges, comm=None, subsample=1):
     kws['RA2']              = ang_coords2[:,0]
     kws['DEC2']             = ang_coords2[:,1]
     kws['CZ2']              = ang_coords2[:,2]
-    
+    kws['verbose']          = True
     results = Corrfunc.mocks.DDrppi_mocks(0, 1, 1, Rmax, redges, ang_coords1[:,0], ang_coords1[:,1], ang_coords1[:,2], **kws)
     logger.info('...rank %d done correlating' %(comm.rank))
     
