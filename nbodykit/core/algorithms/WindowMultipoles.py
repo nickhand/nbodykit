@@ -77,23 +77,26 @@ def paircount(datasource, poles, redges, comm=None, subsample=1):
     # read position for field #2
     pos2 = pos1
     N2 = N1
-        
-    # domain decomposition
-    grid = [numpy.linspace(0, BoxSize[i], Nproc[i]+1, endpoint=True) for i in range(3)]
-    domain = GridND(grid, comm=comm)
     
-    # exchange field #1 positions
-    layout = domain.decompose(pos1, smoothing=0)
-    pos1 = layout.exchange(pos1)
-    if comm.rank == 0: logger.info('exchange pos1')
-
-    # exchange field #2 positions
     if Rmax > BoxSize.min() * 0.25:
         pos2 = numpy.concatenate(comm.allgather(pos2), axis=0)
-    else:
-        layout = domain.decompose(pos2, smoothing=Rmax)
-        pos2 = layout.exchange(pos2)
-    if comm.rank == 0: logger.info('exchange pos2')
+    else:    
+        # domain decomposition
+        grid = [numpy.linspace(0, BoxSize[i], Nproc[i]+1, endpoint=True) for i in range(3)]
+        domain = GridND(grid, comm=comm)
+    
+        # exchange field #1 positions
+        layout = domain.decompose(pos1, smoothing=0)
+        pos1 = layout.exchange(pos1)
+        if comm.rank == 0: logger.info('exchange pos1')
+
+        # exchange field #2 positions
+        if Rmax > BoxSize.min() * 0.25:
+            pos2 = numpy.concatenate(comm.allgather(pos2), axis=0)
+        else:
+            layout = domain.decompose(pos2, smoothing=Rmax)
+            pos2 = layout.exchange(pos2)
+        if comm.rank == 0: logger.info('exchange pos2')
 
     # initialize the trees to hold the field points
     tree1 = correlate.points(pos1)
