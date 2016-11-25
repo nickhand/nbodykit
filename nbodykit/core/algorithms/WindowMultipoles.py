@@ -10,14 +10,13 @@ def paircount(datasource, poles, redges, comm=None, subsample=1):
     Do the pair counting
     """
     from pmesh.domain import GridND
-    import Corrfunc
+    from kdcount import correlate
     from mpi4py import MPI
     
     # some setup
     poles = numpy.array(poles)
     Rmax  = redges[-1]
     if comm is None: comm = MPI.COMM_WORLD
-    cosmo = datasource.cosmo
         
     # log some info
     if comm.rank == 0: logger.info('Rmax = %g' %Rmax)
@@ -49,28 +48,34 @@ def paircount(datasource, poles, redges, comm=None, subsample=1):
         BoxSize = abs(pos_max - pos_min)
     else:
         BoxSize = None
-     
-    ra1  *= 180./numpy.pi 
-    dec1 *= 180./numpy.pi 
-    ang_coords1 = numpy.vstack([ra1, dec1, cosmo.comoving_distance(z1)]).T
        
     BoxSize = comm.bcast(BoxSize)
     if comm.rank == 0: logger.info("BoxSize = %s" %str(BoxSize))
     
     # determine processor division for domain decomposition
-    Nproc = [1, 1, 1]
-    idx = numpy.argmax(BoxSize)
-    Nproc[idx] = comm.size
-    
+    if Rmax > BoxSize.min() * 0.25
+        Nproc = [1, 1, 1]
+        idx = numpy.argmax(BoxSize)
+        Nproc[idx] = comm.size
+    else:
+        # determine processor division for domain decomposition
+        for Nx in range(int(comm.size**0.3333) + 1, 0, -1):
+            if comm.size % Nx == 0: break
+        else:
+            Nx = 1
+        for Ny in range(int(comm.size**0.5) + 1, 0, -1):
+            if (comm.size // Nx) % Ny == 0: break
+        else:
+            Ny = 1
+        Nz = comm.size // Nx // Ny
+        Nproc = [Nx, Ny, Nz]
     if comm.rank == 0: logger.info('Nproc = %s' %str(Nproc))
     
     pos1 = pos1[comm.rank * subsample // comm.size ::subsample]
-    ang_coords1 = ang_coords1[comm.rank * subsample // comm.size ::subsample]
-    N1   = comm.allreduce(len(ang_coords1))
+    N1   = comm.allreduce(len(pos1))
     
     # read position for field #2
     pos2 = pos1
-    ang_coords2 = ang_coords1
     N2 = N1
         
     # domain decomposition
@@ -84,37 +89,48 @@ def paircount(datasource, poles, redges, comm=None, subsample=1):
 
     # exchange field #2 positions
     if Rmax > BoxSize.min() * 0.25:
-        ang_coords2 = numpy.concatenate(comm.allgather(ang_coords2), axis=0)
+        pos2 = numpy.concatenate(comm.allgather(pos2), axis=0)
     else:
         layout = domain.decompose(pos2, smoothing=Rmax)
-        ang_coords2 = layout.exchange(ang_coords2)
-    N2   = comm.allreduce(len(ang_coords2))
+        pos2 = layout.exchange(pos2)
+    N2 = comm.allreduce(len(pos2))
     if comm.rank == 0: logger.info('exchange pos2')
 
+    # initialize the trees to hold the field points
+    tree1 = correlate.points(pos1)
+    tree2 = correlate.points(pos2)
+
     # log the sizes of the trees
-    logger.info('rank %d correlating %d x %d' %(comm.rank, len(ang_coords1), len(ang_coords2)))
+    logger.info('rank %d correlating %d x %d' %(comm.rank, len(tree1), len(tree2)))
     if comm.rank == 0: logger.info('all correlating %d x %d' %(N1, N2))
 
+    # use multipole binning
+    bins = correlate.MultipoleBinning(redges, poles)
+
     # do the pair counting
-    kws                     = {}
-    kws['is_comoving_dist'] = True
-    kws['output_rpavg']     = True
-    kws['RA2']              = ang_coords2[:,0]
-    kws['DEC2']             = ang_coords2[:,1]
-    kws['CZ2']              = ang_coords2[:,2]
-    kws['verbose']          = True
-    results = Corrfunc.mocks.DDrppi_mocks(0, 1, 1, Rmax, redges, ang_coords1[:,0], ang_coords1[:,1], ang_coords1[:,2], **kws)
+    # have to set usefast = False to get mean centers, or exception thrown
+    pc = correlate.paircount(tree2, tree1, bins, np=0, usefast=False, compute_mean_coords=True)
     logger.info('...rank %d done correlating' %(comm.rank))
     
-    # do the sum across ranks
-    results['rpavg'][:] = comm.allreduce(results['npairs']*results['rpavg'])
-    results['npairs'][:] = comm.allreduce(results['npairs'])
+    # all reduce
+    pc.sum1[:] = comm.allreduce(pc.sum1)
     
-    idx = results['npairs'] > 0.
-    results['rpavg'][idx] /= results['npairs'][idx]
+    # get the mean bin values, reducing from all ranks
+    pc.pair_counts[:] = comm.allreduce(pc.pair_counts)
+    with numpy.errstate(invalid='ignore'):
+        if bins.Ndim > 1:
+            for i in range(bins.Ndim):
+                pc.mean_centers[i][:] = comm.allreduce(pc.mean_centers_sum[i]) / pc.pair_counts
+        else:
+            pc.mean_centers[:] = comm.allreduce(pc.mean_centers_sum[0]) / pc.pair_counts
+    
+    # return the correlation and the pair count object
+    toret = pc.sum1
+    if len(poles):
+        toret = toret.T # makes ell the second axis 
 
-    return results
-
+    return pc, toret
+    
 def binning_type(s):
     """
     Type conversion for use on the command-line that converts 
