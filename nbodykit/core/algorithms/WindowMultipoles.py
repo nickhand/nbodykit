@@ -58,16 +58,9 @@ def paircount(datasource, poles, redges, comm=None, subsample=1):
     if comm.rank == 0: logger.info("BoxSize = %s" %str(BoxSize))
     
     # determine processor division for domain decomposition
-    for Nx in range(int(comm.size**0.3333) + 1, 0, -1):
-        if comm.size % Nx == 0: break
-    else:
-        Nx = 1
-    for Ny in range(int(comm.size**0.5) + 1, 0, -1):
-        if (comm.size // Nx) % Ny == 0: break
-    else:
-        Ny = 1
-    Nz = comm.size // Nx // Ny
-    Nproc = [Nx, Ny, Nz]
+    Nproc = [1, 1, 1]
+    idx = numpy.argmax(BoxSize)
+    Nproc[idx] = comm.size
     
     if comm.rank == 0: logger.info('Nproc = %s' %str(Nproc))
     
