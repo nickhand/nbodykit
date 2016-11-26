@@ -10,13 +10,14 @@ def paircount(datasource, poles, redges, comm=None, subsample=1):
     Do the pair counting
     """
     from pmesh.domain import GridND
-    from kdcount import correlate
+    import Corrfunc
     from mpi4py import MPI
     
     # some setup
     poles = numpy.array(poles)
     Rmax  = redges[-1]
     if comm is None: comm = MPI.COMM_WORLD
+    cosmo = datasource.cosmo
         
     # log some info
     if comm.rank == 0: logger.info('Rmax = %g' %Rmax)
@@ -48,39 +49,33 @@ def paircount(datasource, poles, redges, comm=None, subsample=1):
         BoxSize = abs(pos_max - pos_min)
     else:
         BoxSize = None
+     
+    ra1  *= 180./numpy.pi 
+    dec1 *= 180./numpy.pi 
+    ang_coords1 = numpy.vstack([ra1, dec1, cosmo.comoving_distance(z1)]).T
        
     BoxSize = comm.bcast(BoxSize)
     if comm.rank == 0: logger.info("BoxSize = %s" %str(BoxSize))
     
     # determine processor division for domain decomposition
-    if Rmax > BoxSize.min() * 0.25:
-        Nproc = [1, 1, 1]
-        idx = numpy.argmax(BoxSize)
-        Nproc[idx] = comm.size
-    else:
-        # determine processor division for domain decomposition
-        for Nx in range(int(comm.size**0.3333) + 1, 0, -1):
-            if comm.size % Nx == 0: break
-        else:
-            Nx = 1
-        for Ny in range(int(comm.size**0.5) + 1, 0, -1):
-            if (comm.size // Nx) % Ny == 0: break
-        else:
-            Ny = 1
-        Nz = comm.size // Nx // Ny
-        Nproc = [Nx, Ny, Nz]
+    Nproc = [1, 1, 1]
+    idx = numpy.argmax(BoxSize)
+    Nproc[idx] = comm.size
+    
     if comm.rank == 0: logger.info('Nproc = %s' %str(Nproc))
     
     pos1 = pos1[comm.rank * subsample // comm.size ::subsample]
-    N1   = comm.allreduce(len(pos1))
+    ang_coords1 = ang_coords1[comm.rank * subsample // comm.size ::subsample]
+    N1   = comm.allreduce(len(ang_coords1))
     
     # read position for field #2
     pos2 = pos1
+    ang_coords2 = ang_coords1
     N2 = N1
-    
+        
     if Rmax > BoxSize.min() * 0.25:
-        pos2 = numpy.concatenate(comm.allgather(pos2), axis=0)
-    else:    
+        ang_coords2 = numpy.concatenate(comm.allgather(ang_coords2), axis=0)
+    else:
         # domain decomposition
         grid = [numpy.linspace(0, BoxSize[i], Nproc[i]+1, endpoint=True) for i in range(3)]
         domain = GridND(grid, comm=comm)
@@ -91,48 +86,34 @@ def paircount(datasource, poles, redges, comm=None, subsample=1):
         if comm.rank == 0: logger.info('exchange pos1')
 
         # exchange field #2 positions
-        if Rmax > BoxSize.min() * 0.25:
-            pos2 = numpy.concatenate(comm.allgather(pos2), axis=0)
-        else:
-            layout = domain.decompose(pos2, smoothing=Rmax)
-            pos2 = layout.exchange(pos2)
+        layout = domain.decompose(pos2, smoothing=Rmax)
+        ang_coords2 = layout.exchange(ang_coords2)
         if comm.rank == 0: logger.info('exchange pos2')
 
-    # initialize the trees to hold the field points
-    tree1 = correlate.points(pos1)
-    tree2 = correlate.points(pos2)
-
     # log the sizes of the trees
-    logger.info('rank %d correlating %d x %d' %(comm.rank, len(tree1), len(tree2)))
+    logger.info('rank %d correlating %d x %d' %(comm.rank, len(ang_coords1), len(ang_coords2)))
     if comm.rank == 0: logger.info('all correlating %d x %d' %(N1, N2))
 
-    # use multipole binning
-    bins = correlate.MultipoleBinning(redges, poles)
-
     # do the pair counting
-    # have to set usefast = False to get mean centers, or exception thrown
-    pc = correlate.paircount(tree2, tree1, bins, np=0, usefast=False, compute_mean_coords=True)
+    kws                     = {}
+    kws['is_comoving_dist'] = True
+    kws['output_rpavg']     = True
+    kws['RA2']              = ang_coords2[:,0]
+    kws['DEC2']             = ang_coords2[:,1]
+    kws['CZ2']              = ang_coords2[:,2]
+    kws['verbose']          = True
+    results = Corrfunc.mocks.DDrppi_mocks(0, 1, 1, Rmax, redges, ang_coords1[:,0], ang_coords1[:,1], ang_coords1[:,2], **kws)
     logger.info('...rank %d done correlating' %(comm.rank))
     
-    # all reduce
-    pc.sum1[:] = comm.allreduce(pc.sum1)
+    # do the sum across ranks
+    results['rpavg'][:] = comm.allreduce(results['npairs']*results['rpavg'])
+    results['npairs'][:] = comm.allreduce(results['npairs'])
     
-    # get the mean bin values, reducing from all ranks
-    pc.pair_counts[:] = comm.allreduce(pc.pair_counts)
-    with numpy.errstate(invalid='ignore'):
-        if bins.Ndim > 1:
-            for i in range(bins.Ndim):
-                pc.mean_centers[i][:] = comm.allreduce(pc.mean_centers_sum[i]) / pc.pair_counts
-        else:
-            pc.mean_centers[:] = comm.allreduce(pc.mean_centers_sum[0]) / pc.pair_counts
-    
-    # return the correlation and the pair count object
-    toret = pc.sum1
-    if len(poles):
-        toret = toret.T # makes ell the second axis 
+    idx = results['npairs'] > 0.
+    results['rpavg'][idx] /= results['npairs'][idx]
 
-    return pc, toret
-    
+    return results
+
 def binning_type(s):
     """
     Type conversion for use on the command-line that converts 
@@ -197,39 +178,19 @@ class WindowMultipolesAlgorithm(Algorithm):
         """
         # do the work
         kw = {'comm':self.comm, 'subsample':self.subsample}
-        pc, RR = paircount(self.field, self.poles, self.rbins, **kw)
+        return paircount(self.field, self.poles, self.rbins, **kw)
 
-        cols = ['r'] + ['RR_%d' %l for l in self.poles] + ['N']
-        result = [pc.mean_centers] + [RR[:,i] for i in range(len(self.poles))] + [pc.pair_counts]
-        return pc.edges, dict(zip(cols, result))
-    
+        
     def save(self, output, result):
         """
         Save the result returned by `run()` to the filename specified by `output`
-    
+        
         Parameters
         ----------
         output : str
             the string specifying the file to save
         result : tuple
-            the tuple returned by `run()` -- first argument specifies the bin
-            edges and the second is a dictionary holding the data results
+            the structured array results returned by :func:`Corrfunc.mocks.DDrppi_mocks`
         """
-        from nbodykit.storage import MeasurementStorage
-    
-        # only master writes
-        if self.comm.rank == 0:
-        
-            logger.info("saving %s..." %output)
-            edges, result = result
-            storage = MeasurementStorage.create('1d', output)
-    
-            cols = list(result.keys())
-            values = list(result.values())
-            storage.write(edges, cols, values)
-
-
-            
-
-
-
+        if self.comm.rank == 0:    
+            numpy.savez(output, result)
