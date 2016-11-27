@@ -5,16 +5,18 @@ import logging
 
 logger = logging.getLogger('windowpaircount')
 
-def paircount(datasource, poles, redges, comm=None, subsample=1):
+def paircount(datasource, redges, Nmu, comm=None, subsample=1):
     """
     Do the pair counting
     """
+    try:
+        from Corrfunc.mocks import DDsmu_mocks
+    except:
+        raise ImportError("please download and install ``Corrfunc`` from ``https://github.com/nickhand/Corrfunc``")
     from pmesh.domain import GridND
-    import Corrfunc
     from mpi4py import MPI
     
     # some setup
-    poles = numpy.array(poles)
     Rmax  = redges[-1]
     if comm is None: comm = MPI.COMM_WORLD
     cosmo = datasource.cosmo
@@ -97,20 +99,20 @@ def paircount(datasource, poles, redges, comm=None, subsample=1):
     # do the pair counting
     kws                     = {}
     kws['is_comoving_dist'] = True
-    kws['output_rpavg']     = True
+    kws['output_savg']      = True
     kws['RA2']              = ang_coords2[:,0]
     kws['DEC2']             = ang_coords2[:,1]
     kws['CZ2']              = ang_coords2[:,2]
     kws['verbose']          = True
-    results = Corrfunc.mocks.DDrppi_mocks(0, 1, 1, Rmax, redges, ang_coords1[:,0], ang_coords1[:,1], ang_coords1[:,2], **kws)
+    results = DDsmu_mocks(0, 1, 1, Nmu, redges, ang_coords1[:,0], ang_coords1[:,1], ang_coords1[:,2], **kws)
     logger.info('...rank %d done correlating' %(comm.rank))
     
     # do the sum across ranks
-    results['rpavg'][:] = comm.allreduce(results['npairs']*results['rpavg'])
+    results['savg'][:]   = comm.allreduce(results['npairs']*results['savg'])
     results['npairs'][:] = comm.allreduce(results['npairs'])
     
     idx = results['npairs'] > 0.
-    results['rpavg'][idx] /= results['npairs'][idx]
+    results['savg'][idx] /= results['npairs'][idx]
 
     return results
 
@@ -138,21 +140,21 @@ def binning_type(s):
 
 class WindowMultipolesAlgorithm(Algorithm):
     """
-    Algorithm to compute window function multipoles via pair counting
+    Algorithm to compute the window function RR(s,mu) via pair counting
     """
     plugin_name = "WindowMultipoles"
 
-    def __init__(self, rbins, field, poles, subsample=1):
+    def __init__(self, rbins, field, Nmu, subsample=1):
                     
         self.rbins     = rbins
         self.field     = field
-        self.poles     = poles
+        self.Nmu       = Nmu
         self.subsample = subsample
         
     @classmethod
     def fill_schema(cls):  
         s = cls.schema
-        s.description = "compute the window function multipoles via pair counting"
+        s.description = "compute the window function RR(s,mu) via pair counting"
     
         # the positional arguments
         s.add_argument("rbins", type=binning_type, 
@@ -160,9 +162,9 @@ class WindowMultipolesAlgorithm(Algorithm):
         s.add_argument("field", type=DataSource.from_config, 
             help='the first `DataSource` of objects to correlate; '
                  'run `nbkit.py --list-datasources` for all options')
+        s.add_argument('Nmu', type=int,
+            help='number of mu bins when computing RR(ss,mu)')
         s.add_argument("subsample", type=int, help='use 1 out of every N points')
-        s.add_argument('poles', nargs='*', type=int,
-            help='compute the multipoles for these `ell` values from xi(r,mu)')
    
     def run(self):
         """
