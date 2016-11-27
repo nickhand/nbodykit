@@ -180,7 +180,7 @@ class WindowMultipolesAlgorithm(Algorithm):
         """
         # do the work
         kw = {'comm':self.comm, 'subsample':self.subsample}
-        return paircount(self.field, self.poles, self.rbins, **kw)
+        return paircount(self.field, self.rbins, self.Nmu, **kw)
 
         
     def save(self, output, result):
