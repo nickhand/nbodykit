@@ -446,16 +446,11 @@ class CatalogMesh(CatalogSource, MeshSource):
         # weighted number density (objs/cell)
         nbar = 1. * W / numpy.prod(pm.Nmesh)
 
-        # make sure we painted something or nbar is nan; in which case
-        # we set the density to uniform everywhere.
-        if N == 0:
-            warnings.warn(("trying to paint particle source to mesh, "
-                           "but no particles were found!"),
-                            RuntimeWarning
-                        )
-
         # shot noise is volume / un-weighted number
-        shotnoise = numpy.prod(pm.BoxSize) / N
+        if N > 0:
+            shotnoise = numpy.prod(pm.BoxSize) / N
+        else:
+            shotnoise = numpy.nan
 
         # save some meta-data
         toret.attrs = {}

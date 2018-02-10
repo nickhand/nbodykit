@@ -142,6 +142,10 @@ class FKPCatalogMesh(MultipleSpeciesCatalogMesh):
             attrs[name+'.W'] = self.weighted_total(name)
         attrs['alpha'] = attrs['data.W'] / attrs['randoms.W']
 
+        # set alpha to unity if no data
+        if attrs['alpha'] == 0:
+            attrs['alpha'] = 1.
+
         # paint the randoms
         real = self['randoms'].to_real_field(normalize=False)
         real.attrs.update(attrs_to_dict(real, 'randoms.'))

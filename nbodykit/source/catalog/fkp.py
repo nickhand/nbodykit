@@ -46,6 +46,10 @@ class FKPCatalog(MultipleSpeciesCatalog):
 
     def __init__(self, data, randoms, BoxSize=None, BoxPad=0.02):
 
+        # if data is None, use empty catalog
+        if data is None:
+            data = randoms[:0] # an empty slice
+
         # init the base class
         MultipleSpeciesCatalog.__init__(self, ['data', 'randoms'], data, randoms)
 

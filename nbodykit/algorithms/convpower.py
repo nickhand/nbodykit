@@ -540,7 +540,7 @@ class ConvolvedFFTPower(object):
         # check normalization
         Adata = self.attrs['data.norm']
         Aran = self.attrs['randoms.norm']
-        if not numpy.allclose(Adata, Aran, rtol=0.05):
+        if Adata > 0 and not numpy.allclose(Adata, Aran, rtol=0.05):
             msg = "normalization in ConvolvedFFTPower different by more than 5%; "
             msg += ",algorithm requires they must be similar\n"
             msg += "\trandoms.norm = %.6f, data.norm = %.6f\n" % (Aran, Adata)
