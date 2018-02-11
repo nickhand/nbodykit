@@ -399,8 +399,6 @@ class CatalogMesh(CatalogSource, MeshSource):
                 w = lay.exchange(weight)
                 v = lay.exchange(value)
 
-                H = pm.BoxSize / pm.Nmesh
-
                 # in mesh units
                 shifted = pm.affine.shift(0.5)
 
@@ -425,6 +423,7 @@ class CatalogMesh(CatalogSource, MeshSource):
             c2 = real2.r2c()
 
             # and then combine
+            H = pm.BoxSize / pm.Nmesh
             for k, s1, s2 in zip(c1.slabs.x, c1.slabs, c2.slabs):
                 kH = sum(k[i] * H[i] for i in range(3))
                 s1[...] = s1[...] * 0.5 + s2[...] * 0.5 * numpy.exp(0.5 * 1j * kH)
